@@ -144,7 +144,7 @@ def pad(tokens, length, pad_value=1):
     return tokens + [pad_value] * (length - len(tokens))
 
 
-def prepare_minibatch(mb, vocab, device=None, sort=True):
+def prepare_minibatch(mb, vocab, tokenizer, device=None, sort=True, max_length=32):
     """
     Minibatch is a list of examples.
     This function converts words to IDs and returns
@@ -153,13 +153,24 @@ def prepare_minibatch(mb, vocab, device=None, sort=True):
     # batch_size = len(mb)
     reverse_map = None
     lengths = np.array([len(ex.tokens) for ex in mb])
-    maxlen = lengths.max()
+    maxlen = max_length
 
     # vocab returns 0 if the word is not there
-    x = [pad([vocab.w2i.get(t, 0) for t in ex.tokens], maxlen) for ex in mb]
+    # x = [pad([vocab.w2i.get(t, 0) for t in ex.tokens], maxlen) for ex in mb]
+
+    x = tokenizer(
+        mb,
+        max_length=max_length,
+        padding="max_length",
+        truncation=True,
+        return_tensors='pt',
+        add_prefix_space=True,
+        add_special_tokens = True
+    )
     y = [ex.label for ex in mb]
 
-    x = np.array(x)
+
+    x = np.array(x['input_ids'])
     y = np.array(y)
 
     if sort:  # required for LSTM

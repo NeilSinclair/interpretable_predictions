@@ -41,6 +41,8 @@ class LatentRationaleModel(nn.Module):
                  lambda_init:    float = 1e-4,
                  lagrange_lr:    float = 0.01,
                  lagrange_alpha: float = 0.99,
+                 tokenizer = None,                      # BART Tokenizer
+                 model = None
                  ):
 
         super(LatentRationaleModel, self).__init__()
@@ -58,6 +60,8 @@ class LatentRationaleModel(nn.Module):
 
         self.embed = embed = nn.Embedding(vocab_size, emb_size, padding_idx=1)
 
+        self.tokenizer = tokenizer
+
         self.classifier = Classifier(
             embed=embed, hidden_size=hidden_size, output_size=output_size,
             dropout=dropout, layer=layer, nonlinearity="softmax")
@@ -65,11 +69,13 @@ class LatentRationaleModel(nn.Module):
         if self.dependent_z:
             self.latent_model = DependentLatentModel(
                 embed=embed, hidden_size=hidden_size,
-                dropout=dropout, layer=layer)
+                dropout=dropout, layer=layer,
+                model = model, tokenizer = tokenizer)
         else:
             self.latent_model = IndependentLatentModel(
                 embed=embed, hidden_size=hidden_size,
-                dropout=dropout, layer=layer)
+                dropout=dropout, layer=layer,
+                model = model, tokenizer = tokenizer)
 
         self.criterion = nn.NLLLoss(reduction='none')
 
@@ -110,7 +116,7 @@ class LatentRationaleModel(nn.Module):
         :param x: [B, T] (that is, batch-major is assumed)
         :return:
         """
-        mask = (x != 1)  # [B,T]
+        mask = (x != self.tokenizer.pad_token_id)  # [B,T]
         z = self.latent_model(x, mask)
         y = self.classifier(x, mask, z)
 

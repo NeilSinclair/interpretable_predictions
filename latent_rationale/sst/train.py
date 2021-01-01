@@ -17,14 +17,40 @@ from latent_rationale.sst.util import get_args, sst_reader, \
     initialize_model_, get_device
 from latent_rationale.sst.evaluate import evaluate
 
+from transformers import BartTokenizer, BartModel, BartConfig
+
 device = get_device()
 print("device:", device)
 
+
+def freeze_pos_embeds(model):
+    ''' freeze the positional embedding parameters of the model; adapted from finetune.py '''
+    freeze_params(model.model.shared)
+    for d in [model.model.encoder, model.model.decoder]:
+        freeze_params(d.embed_positions)
+
+
+def freeze_token_embeds(model):
+    ''' freeze the positional embedding parameters of the model; adapted from finetune.py '''
+    freeze_params(model.model.shared)
+    for d in [model.model.encoder, model.model.decoder]:
+        freeze_params(d.embed_tokens)
+
+def freeze_params(model):
+  ''' Function that takes a model as input (or part of a model) and freezes the layers for faster training
+      adapted from finetune.py '''
+  for layer in model.parameters():
+    layer.requires_grade = False
 
 def train():
     """
     Main training loop.
     """
+
+    ## Begin by instantiating the BART model and tokenizer
+    tokenizer = BartTokenizer.from_pretrained('facebook/bart-base', add_prefix_space=True)
+    bart_model = BartModel.from_pretrained(
+        "facebook/bart-base")
 
     cfg = get_args()
     cfg = vars(cfg)
@@ -72,16 +98,22 @@ def train():
     i2t = ["very negative", "negative", "neutral", "positive", "very positive"]
     t2i = OrderedDict({p: i for p, i in zip(i2t, range(len(i2t)))})
 
-    # Build model
-    model = build_model(cfg["model"], vocab, t2i, cfg)
-    initialize_model_(model)
+    # Set the embeddings and encoder weights for the BART model to be non-trainable as we
+    # only want the output
 
-    with torch.no_grad():
-        model.embed.weight.data.copy_(torch.from_numpy(vectors))
-        if cfg["fix_emb"]:
-            print("fixed word embeddings")
-            model.embed.weight.requires_grad = False
-        model.embed.weight[1] = 0.  # padding zero
+    freeze_token_embeds(bart_model)
+    freeze_params(bart_model)
+
+    # Build model
+    model = build_model(bart_model, tokenizer)
+    # initialize_model_(model)
+
+    # with torch.no_grad():
+    #     model.embed.weight.data.copy_(torch.from_numpy(vectors))
+    #     if cfg["fix_emb"]:
+    #         print("fixed word embeddings")
+    #         model.embed.weight.requires_grad = False
+    #     model.embed.weight[1] = 0.  # padding zero
 
     optimizer = Adam(model.parameters(), lr=cfg["lr"],
                      weight_decay=cfg["weight_decay"])
@@ -111,8 +143,9 @@ def train():
             epoch = iter_i // iters_per_epoch
 
             model.train()
-            x, targets, _ = prepare_minibatch(batch, model.vocab, device=device)
-            mask = (x != 1)
+            x, targets, _ = prepare_minibatch(batch, model.vocab, tokenizer, device=device)
+
+            mask = (x != tokenizer.pad_token_id)
 
             logits = model(x)  # forward pass
 

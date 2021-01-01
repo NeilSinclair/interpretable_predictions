@@ -1,7 +1,7 @@
 from torch import nn
 import numpy as np
 
-from latent_rationale.common.util import get_encoder
+from latent_rationale.common.latent import shift_tokens_right
 
 
 class Classifier(nn.Module):
@@ -15,29 +15,25 @@ class Classifier(nn.Module):
 
     def __init__(self,
                  embed:        nn.Embedding = None,
-                 hidden_size:  int = 200,
+                 hidden_size:  int = 768,
                  output_size:  int = 1,
                  dropout:      float = 0.1,
                  layer:        str = "rcnn",
-                 nonlinearity: str = "sigmoid"
+                 nonlinearity: str = "sigmoid",
+                 model = None
                  ):
 
         super(Classifier, self).__init__()
 
         emb_size = embed.weight.shape[1]
 
-        self.embed_layer = nn.Sequential(
-            embed,
-            nn.Dropout(p=dropout)
-        )
+        # The "encoding layer" is actually just the whole model here as we use the output of the
+        # decoder layer
+        self.enc_layer = model()
 
-        self.enc_layer = get_encoder(layer, emb_size, hidden_size)
+        self.embed_layer = model.model.get_input_embeddings()
 
-        if hasattr(self.enc_layer, "cnn"):
-            enc_size = self.enc_layer.cnn.out_channels
-        else:
-            enc_size = hidden_size * 2
-
+        enc_size = hidden_size
         self.output_layer = nn.Sequential(
             nn.Dropout(p=dropout),
             nn.Linear(enc_size, output_size),
@@ -59,19 +55,25 @@ class Classifier(nn.Module):
     def forward(self, x, mask, z=None):
 
         rnn_mask = mask
-        emb = self.embed_layer(x)
-
+        encoder_emb = self.embed_layer(x)
+        decoder_emb = self.embed_layer(shift_tokens_right(x))
         # apply z to main inputs
         if z is not None:
             z_mask = (mask.float() * z).unsqueeze(-1)  # [B, T, 1]
             rnn_mask = z_mask.squeeze(-1) > 0.  # z could be continuous
-            emb = emb * z_mask
+            encoder_emb = encoder_emb * z_mask
+            decoder_emb = decoder_emb * z_mask
 
         # z is also used to control when the encoder layer is active
         lengths = mask.long().sum(1)
 
         # encode the sentence
-        _, final = self.enc_layer(emb, rnn_mask, lengths)
+        outputs = self.dec_layer(input_ids=None, attention_mask=mask,
+                                 inputs_embeds=encoder_emb,
+                                 decoder_inputs_embeds=decoder_emb)
+
+        # Get the first token of the hidden state, the <CLS> token
+        final = outputs.last_hidden_state[:, 1, :]
 
         # predict sentiment from final state(s)
         y = self.output_layer(final)

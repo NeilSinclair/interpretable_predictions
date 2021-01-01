@@ -5,13 +5,15 @@ from latent_rationale.sst.models.rl import RLModel
 from latent_rationale.sst.models.latent import LatentRationaleModel
 
 
-def build_model(model_type, vocab, t2i, cfg):
+def build_model(model, tokenizer, cfg):
 
-    vocab_size = len(vocab.w2i)
-    output_size = len(t2i)
+    vocab_size = tokenizer.vocab_size
+    output_size = vocab_size
 
-    emb_size = cfg["embed_size"]
-    hidden_size = cfg["hidden_size"]
+    # emb_size = cfg["embed_size"]
+    emb_size = 50265 # Hard coded based on BART params
+    # hidden_size = cfg["hidden_size"]
+    hidden_size = 768 # Hard coded based on BART params
     dropout = cfg["dropout"]
     layer = cfg["layer"]
     dependent_z = cfg.get("dependent_z", False)
@@ -24,28 +26,15 @@ def build_model(model_type, vocab, t2i, cfg):
 
     assert 0 < selection <= 1.0, "selection must be in (0, 1]"
 
-    if model_type == "baseline":
-        return Baseline(
-            vocab_size, emb_size, hidden_size, output_size, vocab=vocab,
-            dropout=dropout, layer=layer)
-    elif model_type == "rl":
-        return RLModel(
-            vocab_size=vocab_size, emb_size=emb_size,
-            hidden_size=hidden_size, output_size=output_size,
-            vocab=vocab, dropout=dropout, layer=layer,
-            dependent_z=dependent_z,
-            sparsity=sparsity, coherence=coherence)
-    elif model_type == "latent":
-        lambda_init = cfg["lambda_init"]
-        lagrange_lr = cfg["lagrange_lr"]
-        lagrange_alpha = cfg["lagrange_alpha"]
-        return LatentRationaleModel(
-            vocab_size=vocab_size, emb_size=emb_size,
-            hidden_size=hidden_size, output_size=output_size,
-            vocab=vocab, dropout=dropout, layer=layer,
-            dependent_z=dependent_z,
-            selection=selection, lasso=lasso,
-            lambda_init=lambda_init,
-            lagrange_lr=lagrange_lr, lagrange_alpha=lagrange_alpha)
-    else:
-        raise ValueError("Unknown model")
+    lambda_init = cfg["lambda_init"]
+    lagrange_lr = cfg["lagrange_lr"]
+    lagrange_alpha = cfg["lagrange_alpha"]
+    return LatentRationaleModel(
+        vocab_size=vocab_size, emb_size=emb_size,
+        hidden_size=hidden_size, output_size=output_size,
+        vocab=None, dropout=dropout, layer=layer,
+        dependent_z=dependent_z,
+        selection=selection, lasso=lasso,
+        lambda_init=lambda_init,
+        lagrange_lr=lagrange_lr, lagrange_alpha=lagrange_alpha,
+        model=model, tokenizer=tokenizer)
