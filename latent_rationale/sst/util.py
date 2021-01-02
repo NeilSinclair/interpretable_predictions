@@ -7,6 +7,9 @@ import torch
 import random
 import math
 
+from torch.utils.data import Dataset
+import pandas as pd
+
 from latent_rationale.sst.constants import UNK_TOKEN, PAD_TOKEN
 from latent_rationale.sst.plotting import plot_heatmap
 from torch.nn.init import _calculate_fan_in_and_fan_out
@@ -36,7 +39,11 @@ def filereader(path):
 
 def tokens_from_treestring(s):
     """extract the tokens from a sentiment tree"""
-    return re.findall(r"\([0-9] ([^\(\)]+)\)", s)
+    # return re.findall(r"\([0-9] ([^\(\)]+)\)", s)
+    # This has been edited by Neil Sinclair to work with the Yelp Dataset
+    # Remove some extra spaces
+    s = re.sub(r' {2,}', ' ', s)
+    return re.findall(r"([A-Za-z0-9_.?!',]*) *", s)[:-1]
 
 
 def token_labels_from_treestring(s):
@@ -44,24 +51,28 @@ def token_labels_from_treestring(s):
     return list(map(int, re.findall(r"\(([0-9]) [^\(\)]", s)))
 
 
-Example = namedtuple("Example", ["tokens", "label", "token_labels"])
+Example = namedtuple("Example", ["tokens", "label"])
 
 
-def sst_reader(path, lower=False):
+def sst_reader(paths, labels = None, lower=False):
     """
     Reads in examples
     :param path:
     :param lower:
     :return:
     """
-    for line in filereader(path):
-        line = line.lower() if lower else line
-        line = re.sub("\\\\", "", line)  # fix escape
-        tokens = tokens_from_treestring(line)
-        label = int(line[1])
-        token_labels = token_labels_from_treestring(line)
-        assert len(tokens) == len(token_labels), "mismatch tokens/labels"
-        yield Example(tokens=tokens, label=label, token_labels=token_labels)
+    for i, path in enumerate(paths):
+        for line in filereader(path):
+            line = line.lower() if lower else line
+            line = re.sub("\\\\", "", line)  # fix escape
+            tokens = tokens_from_treestring(line)
+            if labels is not None:
+                label = labels[i]
+            else:
+                label = int(line[1])
+            # token_labels = token_labels_from_treestring(line)
+            # assert len(tokens) == len(token_labels), "mismatch tokens/labels"
+            yield Example(tokens=tokens, label=label)
 
 
 def print_parameters(model):
@@ -73,48 +84,6 @@ def print_parameters(model):
                                                       p.requires_grad))
     print("\nTotal parameters: {}\n".format(total))
 
-
-def load_glove(glove_path, vocab, glove_dim=300):
-    """
-    Load Glove embeddings and update vocab.
-    :param glove_path:
-    :param vocab:
-    :param glove_dim:
-    :return:
-    """
-    vectors = []
-    w2i = {}
-    i2w = []
-
-    # Random embedding vector for unknown words
-    vectors.append(np.random.uniform(
-        -0.05, 0.05, glove_dim).astype(np.float32))
-    w2i[UNK_TOKEN] = 0
-    i2w.append(UNK_TOKEN)
-
-    # Zero vector for padding
-    vectors.append(np.zeros(glove_dim).astype(np.float32))
-    w2i[PAD_TOKEN] = 1
-    i2w.append(PAD_TOKEN)
-
-    with open(glove_path, mode="r", encoding="utf-8") as f:
-        for line in f:
-            word, vec = line.split(u' ', 1)
-            w2i[word] = len(vectors)
-            i2w.append(word)
-            vectors.append(np.array(vec.split(), dtype=np.float32))
-
-    # fix brackets
-    w2i[u'-LRB-'] = w2i.pop(u'(')
-    w2i[u'-RRB-'] = w2i.pop(u')')
-
-    i2w[w2i[u'-LRB-']] = u'-LRB-'
-    i2w[w2i[u'-RRB-']] = u'-RRB-'
-
-    vocab.w2i = w2i
-    vocab.i2w = i2w
-
-    return np.stack(vectors)
 
 
 def get_minibatch(data, batch_size=25, shuffle=False):
@@ -142,6 +111,108 @@ def get_minibatch(data, batch_size=25, shuffle=False):
 def pad(tokens, length, pad_value=1):
     """add padding 1s to a sequence to that it has the desired length"""
     return tokens + [pad_value] * (length - len(tokens))
+
+class CreateTokens(object):
+  ''' Create the embeddings for the sentences passed into the model '''
+  def __init__(self, tokenizer):
+    ''' tokenizer - the BART tokenizer
+        create_emb - the create_embedding() method from the BART model '''
+
+    self.tokenizer = tokenizer
+
+  def __call__(self, sample, label):
+    ''' sample is a line from the text with columns [Original, Masked, Label] '''
+    sample = encode_single_sentence(self.tokenizer, sample, label)
+
+    return sample
+
+class TokensDataSet(Dataset):
+    ''' class for loading and transforming data into embeddings '''
+
+    def __init__(self, data_file, transform=None, translate=False, labels = [0,1]):
+        '''
+        Args: data_file - the path to the data_dile
+              transform - an instantiated transformation class
+              translate - whether to encode a translation (i.e. swap the label)
+        '''
+        self.data = sst_reader(data_file, labels)
+        self.transform = transform
+        self.translate = translate
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        # Get a data item and transform it
+        sample = self.data.tokens[idx]
+        label = self.data.label[idx]
+
+        # If we're translating, swap the label from 0 to 1 or 1 to 0
+        if self.translate:
+            sample[-1] = 1 - sample[-1]
+
+        if self.transform:
+            sample = self.transform(sample, label)
+        return sample
+
+    ''' Code taken almost verbatim from utils.py in the transformers/seq2seq github '''
+
+    def collate_fn(self, batch):
+        input_ids = torch.stack([x["input_ids"] for x in batch]).squeeze()
+        labels = torch.stack([x["labels"] for x in batch]).squeeze()
+
+        batch = {
+            "input_ids": input_ids,
+            "labels": labels
+        }
+        return batch
+
+
+def encode_single_sentence(tokenizer, source_sentence, label, max_length=16,
+                           pad_to_max_length=True, return_tensors="pt",
+                           add_special_tokens=True, device='cuda'):
+    ''' Function that tokenizes a sentence
+        Args: tokenizer - the BART tokenizer
+              model_emb - the BART method create_embeddings()
+              source_sentence - the <masked> source sentence: string
+              target_sentence - the <masked> target sentence: string
+              label - the label of the sentence: int
+              max_length - max truncated/padded length
+              return_targets - whether to return the tokenized targets; not necessary if we're just looking at the validation sentences
+        Returns: Dictionary with keys: input_ids, attention_mask, target_ids
+    '''
+
+    input_ids = []
+    attention_masks = []
+    labels = []
+    tokenized_sentences = {}
+    # Remove unecessary tokens
+    source_sentence = re.sub(r' {2,10}', ' ', source_sentence)
+    encoded_dict = tokenizer(
+        source_sentence,
+        max_length=max_length,
+        padding="max_length" if pad_to_max_length else None,
+        truncation=True,
+        return_tensors=return_tensors,
+        add_prefix_space=True,
+        add_special_tokens=add_special_tokens
+    )
+
+    input_ids.append(encoded_dict['input_ids'])
+    labels.append(label)
+
+    input_ids = torch.cat(input_ids, dim=0).to(device)
+    labels = torch.cat(labels, dim=0).to(device)
+    # attention_masks = torch.cat(attention_masks, dim=0)
+
+    processed_sentence = {
+        "input_ids": input_ids,
+        "labels": labels
+    }
+
+    return processed_sentence
 
 
 def prepare_minibatch(mb, vocab, tokenizer, device=None, sort=True, max_length=32):

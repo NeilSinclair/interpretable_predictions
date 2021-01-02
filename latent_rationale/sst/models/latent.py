@@ -64,7 +64,8 @@ class LatentRationaleModel(nn.Module):
 
         self.classifier = Classifier(
             embed=embed, hidden_size=hidden_size, output_size=output_size,
-            dropout=dropout, layer=layer, nonlinearity="softmax")
+            dropout=dropout, layer=layer, nonlinearity="softmax",
+            model=model)
 
         if self.dependent_z:
             self.latent_model = DependentLatentModel(

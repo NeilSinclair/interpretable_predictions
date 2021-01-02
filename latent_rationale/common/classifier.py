@@ -29,9 +29,9 @@ class Classifier(nn.Module):
 
         # The "encoding layer" is actually just the whole model here as we use the output of the
         # decoder layer
-        self.enc_layer = model()
+        self.enc_layer = model
 
-        self.embed_layer = model.model.get_input_embeddings()
+        self.embed_layer = model.get_input_embeddings()
 
         enc_size = hidden_size
         self.output_layer = nn.Sequential(

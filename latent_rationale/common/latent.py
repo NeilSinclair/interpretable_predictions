@@ -45,9 +45,9 @@ class IndependentLatentModel(nn.Module):
 
         # self.embed_layer = nn.Sequential(embed, nn.Dropout(p=dropout))
         # Get the BART embeddings
-        self.embed_layer = self.model.model.get_input_embeddings()
+        self.embed_layer = self.model.get_input_embeddings()
         # declare the model
-        self.dec_layer = self.model()
+        self.dec_layer = model
 
         if distribution == "kuma":
             self.z_layer = KumaGate(enc_size)
@@ -138,9 +138,9 @@ class DependentLatentModel(nn.Module):
 
         # self.embed_layer = nn.Sequential(embed, nn.Dropout(p=dropout))
         # Get the BART embeddings
-        self.embed_layer = self.model.model.get_input_embeddings()
+        self.embed_layer = self.model.get_input_embeddings()
         # declare the model
-        self.dec_layer = self.model()
+        self.dec_layer = model
 
         ####
 

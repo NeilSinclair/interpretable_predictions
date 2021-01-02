@@ -8,13 +8,14 @@ import torch.optim
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader, RandomSampler
 
 from latent_rationale.common.util import make_kv_string
 from latent_rationale.sst.vocabulary import Vocabulary
 from latent_rationale.sst.models.model_helpers import build_model
 from latent_rationale.sst.util import get_args, sst_reader, \
     prepare_minibatch, get_minibatch, load_glove, print_parameters, \
-    initialize_model_, get_device
+    initialize_model_, get_device, TokensDataSet, encode_single_sentence, CreateTokens
 from latent_rationale.sst.evaluate import evaluate
 
 from transformers import BartTokenizer, BartModel, BartConfig
@@ -25,15 +26,15 @@ print("device:", device)
 
 def freeze_pos_embeds(model):
     ''' freeze the positional embedding parameters of the model; adapted from finetune.py '''
-    freeze_params(model.model.shared)
-    for d in [model.model.encoder, model.model.decoder]:
+    freeze_params(model.shared)
+    for d in [model.encoder, model.decoder]:
         freeze_params(d.embed_positions)
 
 
 def freeze_token_embeds(model):
     ''' freeze the positional embedding parameters of the model; adapted from finetune.py '''
-    freeze_params(model.model.shared)
-    for d in [model.model.encoder, model.model.decoder]:
+    freeze_params(model.shared)
+    for d in [model.encoder, model.decoder]:
         freeze_params(d.embed_tokens)
 
 def freeze_params(model):
@@ -65,9 +66,22 @@ def train():
     eval_batch_size = cfg.get("eval_batch_size", batch_size)
 
     print("Loading data")
-    train_data = list(sst_reader("data/sst/train.txt"))
-    dev_data = list(sst_reader("data/sst/dev.txt"))
-    test_data = list(sst_reader("data/sst/test.txt"))
+
+    # Load the tokens into custom dataset objects
+    dataset = TokensDataSet(data_file=["data/sst/sentiment.train.0", "data/sst/sentiment.train.1"],
+                            transform=CreateTokens(tokenizer),
+                            labels=[0, 1])
+    train_data = DataLoader(dataset, collate_fn=dataset.collate_fn, sampler=RandomSampler(dataset), batch_size=batch_size)
+
+    dataset = TokensDataSet(data_file=["data/sst/sentiment.test.0", "data/sst/sentiment.test.1"],
+                            transform=CreateTokens(tokenizer),
+                            labels=[0, 1])
+    test_data = DataLoader(dataset, collate_fn=dataset.collate_fn,  batch_size=batch_size)
+
+    dataset = TokensDataSet(data_file=["data/sst/sentiment.dev.0", "data/sst/sentiment.dev.1"],
+                            transform=CreateTokens(tokenizer),
+                            labels=[0, 1])
+    dev_data = DataLoader(dataset, collate_fn=dataset.collate_fn, batch_size=batch_size)
 
     print("train", len(train_data))
     print("dev", len(dev_data))
@@ -105,7 +119,7 @@ def train():
     freeze_params(bart_model)
 
     # Build model
-    model = build_model(bart_model, tokenizer)
+    model = build_model(bart_model, tokenizer, cfg)
     # initialize_model_(model)
 
     # with torch.no_grad():
@@ -136,14 +150,17 @@ def train():
 
     # print model
     print(model)
-    print_parameters(model)
+    # print_parameters(model)
 
     while True:  # when we run out of examples, shuffle and continue
-        for batch in get_minibatch(train_data, batch_size=batch_size, shuffle=True):
+        for i, batch in enumerate(train_data):
+        # for batch in get_minibatch(train_data, batch_size=batch_size, shuffle=True):
             epoch = iter_i // iters_per_epoch
 
             model.train()
-            x, targets, _ = prepare_minibatch(batch, model.vocab, tokenizer, device=device)
+            x = batch['input_ids']
+            targets = batch['labels']
+            # x, targets, _ = prepare_minibatch(batch, model.vocab, tokenizer, device=device)
 
             mask = (x != tokenizer.pad_token_id)
 
