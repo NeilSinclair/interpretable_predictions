@@ -8,7 +8,6 @@ import random
 import math
 
 from torch.utils.data import Dataset
-import pandas as pd
 
 from latent_rationale.sst.constants import UNK_TOKEN, PAD_TOKEN
 from latent_rationale.sst.plotting import plot_heatmap
@@ -43,8 +42,8 @@ def tokens_from_treestring(s):
     # This has been edited by Neil Sinclair to work with the Yelp Dataset
     # Remove some extra spaces
     s = re.sub(r' {2,}', ' ', s)
-    return re.findall(r"([A-Za-z0-9_.?!',]*) *", s)[:-1]
-
+    # return re.findall(r"([A-Za-z0-9_.?!',]*) *", s)[:-1]
+    return s
 
 def token_labels_from_treestring(s):
     """extract token labels from sentiment tree"""
@@ -129,13 +128,13 @@ class CreateTokens(object):
 class TokensDataSet(Dataset):
     ''' class for loading and transforming data into embeddings '''
 
-    def __init__(self, data_file, transform=None, translate=False, labels = [0,1]):
+    def __init__(self, data_file, transform=None, translate=False, labels=[0,1]):
         '''
         Args: data_file - the path to the data_dile
               transform - an instantiated transformation class
               translate - whether to encode a translation (i.e. swap the label)
         '''
-        self.data = sst_reader(data_file, labels)
+        self.data = list(sst_reader(data_file, labels))
         self.transform = transform
         self.translate = translate
 
@@ -146,8 +145,8 @@ class TokensDataSet(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         # Get a data item and transform it
-        sample = self.data.tokens[idx]
-        label = self.data.label[idx]
+        sample = self.data[idx].tokens
+        label = self.data[idx].label
 
         # If we're translating, swap the label from 0 to 1 or 1 to 0
         if self.translate:

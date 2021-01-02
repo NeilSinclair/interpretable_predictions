@@ -14,7 +14,7 @@ from latent_rationale.common.util import make_kv_string
 from latent_rationale.sst.vocabulary import Vocabulary
 from latent_rationale.sst.models.model_helpers import build_model
 from latent_rationale.sst.util import get_args, sst_reader, \
-    prepare_minibatch, get_minibatch, load_glove, print_parameters, \
+    prepare_minibatch, get_minibatch, print_parameters, \
     initialize_model_, get_device, TokensDataSet, encode_single_sentence, CreateTokens
 from latent_rationale.sst.evaluate import evaluate
 
@@ -97,16 +97,16 @@ def train():
         num_iterations = iters_per_epoch * -1 * cfg["num_iterations"]
         print("Set num_iterations to {}".format(num_iterations))
 
-    example = dev_data[0]
-    print("First train example:", example)
-    print("First train example tokens:", example.tokens)
-    print("First train example label:", example.label)
+    example = next(iter(dev_data))
+    print("First train example:", [tokenizer.decode(w) for w in example['input_ids']])
+    print("First train example tokens:", example['input_ids'])
+    print("First train example label:", example['labels'])
 
     writer = SummaryWriter(log_dir=cfg["save_path"])  # TensorBoard
 
     vocab = Vocabulary()  # populated by load_glove
     glove_path = cfg["word_vectors"]
-    vectors = load_glove(glove_path, vocab)
+    # vectors = load_glove(glove_path, vocab)
 
     # Map the sentiment labels 0-4 to a more readable form (and the opposite)
     i2t = ["very negative", "negative", "neutral", "positive", "very positive"]

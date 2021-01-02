@@ -19,19 +19,10 @@ class Classifier(nn.Module):
                  output_size:  int = 1,
                  dropout:      float = 0.1,
                  layer:        str = "rcnn",
-                 nonlinearity: str = "sigmoid",
-                 model = None
+                 nonlinearity: str = "sigmoid"
                  ):
 
         super(Classifier, self).__init__()
-
-        emb_size = embed.weight.shape[1]
-
-        # The "encoding layer" is actually just the whole model here as we use the output of the
-        # decoder layer
-        self.enc_layer = model
-
-        self.embed_layer = model.get_input_embeddings()
 
         enc_size = hidden_size
         self.output_layer = nn.Sequential(
@@ -52,28 +43,7 @@ class Classifier(nn.Module):
                 count += np.prod(list(p.shape))
         print("{} #params: {}".format(self.__class__.__name__, count))
 
-    def forward(self, x, mask, z=None):
-
-        rnn_mask = mask
-        encoder_emb = self.embed_layer(x)
-        decoder_emb = self.embed_layer(shift_tokens_right(x))
-        # apply z to main inputs
-        if z is not None:
-            z_mask = (mask.float() * z).unsqueeze(-1)  # [B, T, 1]
-            rnn_mask = z_mask.squeeze(-1) > 0.  # z could be continuous
-            encoder_emb = encoder_emb * z_mask
-            decoder_emb = decoder_emb * z_mask
-
-        # z is also used to control when the encoder layer is active
-        lengths = mask.long().sum(1)
-
-        # encode the sentence
-        outputs = self.dec_layer(input_ids=None, attention_mask=mask,
-                                 inputs_embeds=encoder_emb,
-                                 decoder_inputs_embeds=decoder_emb)
-
-        # Get the first token of the hidden state, the <CLS> token
-        final = outputs.last_hidden_state[:, 1, :]
+    def forward(self, final):
 
         # predict sentiment from final state(s)
         y = self.output_layer(final)
