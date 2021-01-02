@@ -29,8 +29,8 @@ class LatentRationaleModel(nn.Module):
     def __init__(self,
                  vocab:          object = None,
                  vocab_size:     int = 0,
-                 emb_size:       int = 200,
-                 hidden_size:    int = 200,
+                 emb_size:       int = 768,
+                 hidden_size:    int = 768,
                  output_size:    int = 1,
                  dropout:        float = 0.1,
                  layer:          str = "lstm",
@@ -42,7 +42,8 @@ class LatentRationaleModel(nn.Module):
                  lagrange_lr:    float = 0.01,
                  lagrange_alpha: float = 0.99,
                  tokenizer=None,                      # BART Tokenizer
-                 model=None
+                 model=None,
+                 model_type="bart"
                  ):
 
         super(LatentRationaleModel, self).__init__()
@@ -58,6 +59,7 @@ class LatentRationaleModel(nn.Module):
         self.z_rnn_size = z_rnn_size
         self.dependent_z = dependent_z
 
+        self.model_type = model_type
         self.embed = embed = nn.Embedding(vocab_size, emb_size, padding_idx=1)
 
         self.tokenizer = tokenizer
@@ -125,14 +127,18 @@ class LatentRationaleModel(nn.Module):
         encoder_emb = self.embed_layer(x)
 
         # Shift the decoder embedding one to the right
-        decoder_emb = encoder_emb.copy()
+        decoder_emb = encoder_emb.clone()
         decoder_emb[:, 1:, :] = decoder_emb[:, :-1, :]
         decoder_emb[:, 0, :] = 0. * decoder_emb[:, 1, :]
 
         # Get the hidden layer from the model
-        outputs = self.dec_layer(input_ids=None, attention_mask=mask,
-                                 inputs_embeds=encoder_emb,
-                                 decoder_inputs_embeds=decoder_emb)
+        if self.model_type == "bart":
+            outputs = self.dec_layer(input_ids=None, attention_mask=mask,
+                                     inputs_embeds=encoder_emb,
+                                     decoder_inputs_embeds=decoder_emb)
+        else:
+            outputs = self.dec_layer(input_ids=None, attention_mask=mask,
+                                 inputs_embeds=encoder_emb)
         # hidden = all except the <cls> token at the start
         h = outputs.final_hidden_layer[:, 1:, :]
 
@@ -142,15 +148,18 @@ class LatentRationaleModel(nn.Module):
         # Mask the embeddings / tokens based on z
         encoder_emb = (mask.float() * z).unsqueeze(-1) * encoder_emb
         # Shift the decoder embedding one to the right
-        decoder_emb = encoder_emb.copy()
+        decoder_emb = encoder_emb.clone()
         decoder_emb[:, 1:, :] = decoder_emb[:, :-1, :]
         decoder_emb[:, 0, :] = 0. * decoder_emb[:, 1, :]
 
         # Get the classification result
-
-        outputs = self.dec_layer(input_ids=None, attention_mask=mask,
-                                 inputs_embeds=encoder_emb,
-                                 decoder_inputs_embeds=decoder_emb)
+        if self.model_type == "bart":
+            outputs = self.dec_layer(input_ids=None, attention_mask=mask,
+                                     inputs_embeds=encoder_emb,
+                                     decoder_inputs_embeds=decoder_emb)
+        else:
+            outputs = self.dec_layer(input_ids=None, attention_mask=mask,
+                                 inputs_embeds=encoder_emb)
 
         # Get the first token of the hidden state, the <CLS> token
         final = outputs.last_hidden_state[:, 0, :]

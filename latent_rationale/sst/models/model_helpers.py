@@ -5,13 +5,16 @@ from latent_rationale.sst.models.rl import RLModel
 from latent_rationale.sst.models.latent import LatentRationaleModel
 
 
-def build_model(model, tokenizer, cfg):
+def build_model(model, tokenizer, cfg, model_type="bart"):
 
     vocab_size = tokenizer.vocab_size
     output_size = vocab_size
 
     # emb_size = cfg["embed_size"]
-    emb_size = 50265 # Hard coded based on BART params
+    if model_type == "bart":
+        emb_size = 50265 # Hard coded based on BART params
+    else:
+        emb_size = 30522
     # hidden_size = cfg["hidden_size"]
     hidden_size = 768 # Hard coded based on BART params
     dropout = cfg["dropout"]
@@ -37,4 +40,4 @@ def build_model(model, tokenizer, cfg):
         selection=selection, lasso=lasso,
         lambda_init=lambda_init,
         lagrange_lr=lagrange_lr, lagrange_alpha=lagrange_alpha,
-        model=model, tokenizer=tokenizer)
+        model=model, tokenizer=tokenizer, model_type=model_type)

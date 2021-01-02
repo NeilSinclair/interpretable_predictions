@@ -195,15 +195,15 @@ def encode_single_sentence(tokenizer, source_sentence, label, max_length=16,
         padding="max_length" if pad_to_max_length else None,
         truncation=True,
         return_tensors=return_tensors,
-        add_prefix_space=True,
+        add_prefix_space=False,
         add_special_tokens=add_special_tokens
     )
 
     input_ids.append(encoded_dict['input_ids'])
-    labels.append(label)
+    # labels.append(label)
 
     input_ids = torch.cat(input_ids, dim=0).to(device)
-    labels = torch.cat(labels, dim=0).to(device)
+    labels = torch.Tensor([label]).to(device)
     # attention_masks = torch.cat(attention_masks, dim=0)
 
     processed_sentence = {

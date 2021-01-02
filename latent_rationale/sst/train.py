@@ -18,24 +18,30 @@ from latent_rationale.sst.util import get_args, sst_reader, \
     initialize_model_, get_device, TokensDataSet, encode_single_sentence, CreateTokens
 from latent_rationale.sst.evaluate import evaluate
 
-from transformers import BartTokenizer, BartModel, BartConfig
+from transformers import BartTokenizer, BartModel, BartConfig, DistilBertModel, DistilBertTokenizer
 
 device = get_device()
 print("device:", device)
 
 
-def freeze_pos_embeds(model):
+def freeze_pos_embeds(model, model_type="bart"):
     ''' freeze the positional embedding parameters of the model; adapted from finetune.py '''
-    freeze_params(model.shared)
-    for d in [model.encoder, model.decoder]:
-        freeze_params(d.embed_positions)
+    if model_type == "bart":
+        freeze_params(model.shared)
+        for d in [model.encoder, model.decoder]:
+            freeze_params(d.embed_positions)
+    else:
+        freeze_params(model.embeddings.position_embeddings)
 
 
-def freeze_token_embeds(model):
+def freeze_token_embeds(model, model_type="bart"):
     ''' freeze the positional embedding parameters of the model; adapted from finetune.py '''
-    freeze_params(model.shared)
-    for d in [model.encoder, model.decoder]:
-        freeze_params(d.embed_tokens)
+    if model_type == "bart":
+        freeze_params(model.shared)
+        for d in [model.encoder, model.decoder]:
+            freeze_params(d.embed_tokens)
+    else:
+        freeze_params(model.embeddings.word_embeddings)
 
 def freeze_params(model):
   ''' Function that takes a model as input (or part of a model) and freezes the layers for faster training
@@ -49,15 +55,19 @@ def train():
     """
 
     ## Begin by instantiating the BART model and tokenizer
-    tokenizer = BartTokenizer.from_pretrained('facebook/bart-base', add_prefix_space=True)
-    bart_model = BartModel.from_pretrained(
-        "facebook/bart-base")
+    # tokenizer = BartTokenizer.from_pretrained('facebook/bart-base', add_prefix_space=True)
+    # bart_model = BartModel.from_pretrained(
+    #     "facebook/bart-base")
+
+    tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased', add_prefix_space=True)
+    bart_model = DistilBertModel.from_pretrained(
+        "distilbert-base-uncased")
 
     cfg = get_args()
     cfg = vars(cfg)
-
-    for k, v in cfg.items():
-        print("{:20} : {:10}".format(k, v))
+    # Lots of model information given when training
+    # for k, v in cfg.items():
+    #     print("{:20} : {:10}".format(k, v))
 
     num_iterations = cfg["num_iterations"]
     print_every = cfg["print_every"]
@@ -98,9 +108,9 @@ def train():
         print("Set num_iterations to {}".format(num_iterations))
 
     example = next(iter(dev_data))
-    print("First train example:", [tokenizer.decode(w) for w in example['input_ids']])
-    print("First train example tokens:", example['input_ids'])
-    print("First train example label:", example['labels'])
+    print("First train example:", [tokenizer.decode(w) for w in example['input_ids'][0]])
+    print("First train example tokens:", example['input_ids'][0])
+    print("First train example label:", example['labels'][0])
 
     writer = SummaryWriter(log_dir=cfg["save_path"])  # TensorBoard
 
@@ -114,20 +124,14 @@ def train():
 
     # Set the embeddings and encoder weights for the BART model to be non-trainable as we
     # only want the output
-
-    freeze_token_embeds(bart_model)
-    freeze_params(bart_model)
+    print("Freezing Model parameters")
+    freeze_token_embeds(bart_model, model_type = "distilbert")
+    freeze_pos_embeds(bart_model, model_type = "distilbert")
 
     # Build model
-    model = build_model(bart_model, tokenizer, cfg)
+    print("Building the model")
+    model = build_model(bart_model, tokenizer, cfg, model_type = "bert")
     # initialize_model_(model)
-
-    # with torch.no_grad():
-    #     model.embed.weight.data.copy_(torch.from_numpy(vectors))
-    #     if cfg["fix_emb"]:
-    #         print("fixed word embeddings")
-    #         model.embed.weight.requires_grad = False
-    #     model.embed.weight[1] = 0.  # padding zero
 
     optimizer = Adam(model.parameters(), lr=cfg["lr"],
                      weight_decay=cfg["weight_decay"])
