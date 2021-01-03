@@ -31,7 +31,7 @@ def get_histogram_counts(z=None, mask=None, mb=None):
     return counts
 
 
-def evaluate(model, data, batch_size=25, device=None):
+def evaluate(model, data, batch_size=25, device=None, tokenizer=None):
     """Accuracy of a model on given data set (using minibatches)"""
 
     model.eval()  # disable dropout
@@ -42,15 +42,19 @@ def evaluate(model, data, batch_size=25, device=None):
     histogram_totals = np.zeros(5).astype(np.int64)
     z_histogram_totals = np.zeros(5).astype(np.int64)
 
-    for mb in get_minibatch(data, batch_size=batch_size, shuffle=False):
-        x, targets, reverse_map = prepare_minibatch(mb, model.vocab, device=device)
-        mask = (x != 1)
-        batch_size = targets.size(0)
+    for i, batch in enumerate(data):
+        # for batch in get_minibatch(train_data, batch_size=batch_size, shuffle=True):
+        # epoch = iter_i // iters_per_epoch
+
+        model.train()
+        x = batch['input_ids']
+        targets = batch['labels']
+        # x, targets, _ = prepare_minibatch(batch, model.vocab, tokenizer, device=device)
+
+        mask = (x != tokenizer.pad_token_id)
         with torch.no_grad():
-
-            logits = model(x)
+            logits = model(x)  # forward pass
             predictions = model.predict(logits)
-
             loss, loss_optional = model.get_loss(logits, targets, mask=mask)
 
             if isinstance(loss, dict):
@@ -73,12 +77,12 @@ def evaluate(model, data, batch_size=25, device=None):
 
                 # histogram counts
                 # for this need to sort z in original order
-                z = model.z.squeeze(1).squeeze(-1)[reverse_map]
-                mask = mask[reverse_map]
-                z_histogram = get_histogram_counts(z=z, mask=mask, mb=mb)
-                z_histogram_totals += z_histogram
-                histogram = get_histogram_counts(mb=mb)
-                histogram_totals += histogram
+                # z = model.z.squeeze(1).squeeze(-1)[reverse_map]
+                # mask = mask[reverse_map]
+                # z_histogram = get_histogram_counts(z=z, mask=mask, mb=mb)
+                # z_histogram_totals += z_histogram
+                # histogram = get_histogram_counts(mb=mb)
+                # histogram_totals += histogram
 
         # add the number of correct predictions to the total correct
         totals['acc'] += (predictions == targets.view(-1)).sum().item()

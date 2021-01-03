@@ -203,7 +203,7 @@ def encode_single_sentence(tokenizer, source_sentence, label, max_length=16,
     # labels.append(label)
 
     input_ids = torch.cat(input_ids, dim=0).to(device)
-    labels = torch.Tensor([label]).to(device)
+    labels = torch.LongTensor([label]).to(device)
     # attention_masks = torch.cat(attention_masks, dim=0)
 
     processed_sentence = {

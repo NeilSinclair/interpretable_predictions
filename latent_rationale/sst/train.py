@@ -153,7 +153,7 @@ def train():
     model = model.to(device)
 
     # print model
-    print(model)
+    # print(model)
     # print_parameters(model)
 
     while True:  # when we run out of examples, shuffle and continue

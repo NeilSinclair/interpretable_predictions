@@ -122,6 +122,8 @@ class LatentRationaleModel(nn.Module):
         :param x: [B, T] (that is, batch-major is assumed)
         :return:
         """
+        # We ignore the first token because this is the <CLS> token
+        # mask = (x[:, 1:] != self.tokenizer.pad_token_id)  # [B,T]
         mask = (x != self.tokenizer.pad_token_id)  # [B,T]
         # Get the encoder embedding
         encoder_emb = self.embed_layer(x)
@@ -136,14 +138,19 @@ class LatentRationaleModel(nn.Module):
             outputs = self.dec_layer(input_ids=None, attention_mask=mask,
                                      inputs_embeds=encoder_emb,
                                      decoder_inputs_embeds=decoder_emb)
+            h = outputs.final_hidden_layer[:, 1:, :]
         else:
             outputs = self.dec_layer(input_ids=None, attention_mask=mask,
-                                 inputs_embeds=encoder_emb)
-        # hidden = all except the <cls> token at the start
-        h = outputs.final_hidden_layer[:, 1:, :]
+                                     inputs_embeds=encoder_emb)
+            # hidden = the final hidden state, excluding the first <cls> token
+            h = outputs.last_hidden_state[:, 1:, :]
+
 
         # Get the z result
-        z = self.latent_model(h, mask)
+        z = self.latent_model(h, mask[:, 1:])
+
+        # Add a 1 for the first part of z
+        z = torch.cat([torch.ones([z.size()[0], 1]).to(device), z], 1)
 
         # Mask the embeddings / tokens based on z
         encoder_emb = (mask.float() * z).unsqueeze(-1) * encoder_emb
@@ -157,12 +164,16 @@ class LatentRationaleModel(nn.Module):
             outputs = self.dec_layer(input_ids=None, attention_mask=mask,
                                      inputs_embeds=encoder_emb,
                                      decoder_inputs_embeds=decoder_emb)
+            # Get the first token of the hidden state, the <CLS> token
+            final = outputs.last_hidden_state[:, 0, :]
         else:
             outputs = self.dec_layer(input_ids=None, attention_mask=mask,
                                  inputs_embeds=encoder_emb)
+            # Get the first token of the hidden state, the <CLS> token
+            final = outputs.last_hidden_state[:, 0, :]
+            final = torch.mean(outputs.last_hidden_state[:, 1:, :], dim = 1).unsqueeze(1) #[B, 1, D]
 
-        # Get the first token of the hidden state, the <CLS> token
-        final = outputs.last_hidden_state[:, 0, :]
+
 
         y = self.classifier(final)
 
@@ -196,6 +207,8 @@ class LatentRationaleModel(nn.Module):
                 pdf0.append(pdf_t)
             pdf0 = torch.stack(pdf0, dim=1)  # [B, T, 1]
 
+        # Because we ignore the first <cls> token, we take mask from token 2 onwards
+        mask = mask[:, 1:]
         pdf0 = pdf0.squeeze(-1)
         pdf0 = torch.where(mask, pdf0, pdf0.new_zeros([1]))  # [B, T]
 
